@@ -2,6 +2,9 @@
  * ServiceNode represents a Docker Compose service configuration
  */
 export interface ServiceNode {
+  // Visual properties
+  icon?: string;
+  
   // Metadata properties
   container_name?: string;
   image?: string;

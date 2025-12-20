@@ -8,6 +8,15 @@
     "opener:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "process:allow-exit"
+    "process:allow-exit",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        {
+          "url": "https://hub.docker.com/*"
+        }
+      ]
+    }
   ]
 }
