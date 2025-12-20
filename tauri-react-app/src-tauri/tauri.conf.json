@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-react-app",
+        "title": "Visual Docker Compose",
         "width": 1200,
         "height": 600,
         "minWidth": 1200,
