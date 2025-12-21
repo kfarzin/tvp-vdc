@@ -40,7 +40,7 @@ const SERVICE_ICONS = [
 ];
 
 // Custom node component
-const CustomServiceNode = ({ data }: NodeProps) => {
+const CustomServiceNode = ({ data, selected }: NodeProps) => {
   const icon = data.icon || 'container';
   
   const renderIcon = () => {
@@ -92,7 +92,11 @@ const CustomServiceNode = ({ data }: NodeProps) => {
   };
   
   return (
-    <div className="px-4 py-2 shadow-md rounded-md bg-white dark:bg-gray-700 border-2 border-blue-500 dark:border-blue-400">
+    <div className={`px-4 py-2 shadow-md rounded-md bg-white dark:bg-gray-700 transition-all ${
+      selected 
+        ? 'border-4 border-blue-600 dark:border-blue-500 shadow-xl' 
+        : 'border-2 border-blue-500 dark:border-blue-400'
+    }`}>
       <Handle type="target" position={Position.Top} />
       <div className="flex items-center gap-2">
         <div className="text-blue-500 dark:text-blue-400">
@@ -1276,6 +1280,39 @@ function App() {
     }
   };
 
+  // Handle service click in sidebar - select corresponding node in canvas
+  const handleServiceClick = (serviceName: string) => {
+    setNodes((nds) =>
+      nds.map((node) => ({
+        ...node,
+        selected: node.id === serviceName,
+      }))
+    );
+  };
+
+  // Handle node click in canvas - expand corresponding service in sidebar
+  const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    const serviceName = node.id;
+    
+    // Expand the clicked service and collapse others
+    const newCollapsed = new Set(collapsedServices);
+    // Remove the clicked service from collapsed (expand it)
+    newCollapsed.delete(serviceName);
+    
+    // Add all other services to collapsed
+    if (selectedItemId) {
+      const item = workspaceManager.getItem(selectedItemId);
+      const allServices = Object.keys(item?.serviceContainer?.services || {});
+      allServices.forEach(svc => {
+        if (svc !== serviceName) {
+          newCollapsed.add(svc);
+        }
+      });
+    }
+    
+    setCollapsedServices(newCollapsed);
+  }, [selectedItemId, collapsedServices]);
+
   return (
     <div className="h-screen w-screen grid grid-cols-[250px_1fr] grid-rows-[1fr_32px] bg-white dark:bg-gray-900 overflow-hidden">
         {/* Left Sidebar - spans full height */}
@@ -1447,6 +1484,7 @@ function App() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onNodeClick={handleNodeClick}
               onPaneClick={() => {/* Canvas clicked - properties already shown */}}
               proOptions={{ hideAttribution: true }}
               className="bg-gray-50 dark:bg-gray-800"
@@ -1584,7 +1622,10 @@ function App() {
                         const isCollapsed = collapsedServices.has(serviceName);
                         return (
                           <div key={serviceName} className="border-t-4 border-blue-500 bg-gray-50 dark:bg-gray-800 rounded">
-                            <div className="w-full flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <div 
+                              className="w-full flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              onClick={() => handleServiceClick(serviceName)}
+                            >
                               {editingServiceName === serviceName ? (
                                 <input
                                   type="text"
