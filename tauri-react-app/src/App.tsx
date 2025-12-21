@@ -1552,13 +1552,13 @@ function App() {
                                           <div className="pl-2 space-y-1">
                                             {arrayValue.length > 0 ? (
                                               arrayValue.map((item, index) => (
-                                                <div key={index} className="flex items-center gap-1 group">
+                                                <div key={index} className="flex items-center gap-1 group py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
                                                   <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
                                                     {typeof item === 'object' ? JSON.stringify(item) : String(item)}
                                                   </span>
                                                   <button
                                                     onClick={() => handleArrayItemRemove(serviceName, key, index)}
-                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all flex-shrink-0"
                                                     title="Remove"
                                                   >
                                                     <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1605,13 +1605,13 @@ function App() {
                                           <div className="pl-2 space-y-1">
                                             {arrayValue.length > 0 ? (
                                               arrayValue.map((item, index) => (
-                                                <div key={index} className="flex items-center gap-1 group">
+                                                <div key={index} className="flex items-center gap-1 group py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
                                                   <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
                                                     {typeof item === 'object' ? JSON.stringify(item) : String(item)}
                                                   </span>
                                                   <button
                                                     onClick={() => handleArrayItemRemove(serviceName, key, index)}
-                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all flex-shrink-0"
                                                     title="Remove"
                                                   >
                                                     <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1676,13 +1676,13 @@ function App() {
                                           <div className="pl-2 space-y-1">
                                             {arrayValue.length > 0 ? (
                                               arrayValue.map((item, index) => (
-                                                <div key={index} className="flex items-center gap-1 group">
+                                                <div key={index} className="flex items-center gap-1 group py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
                                                   <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
                                                     {typeof item === 'object' ? JSON.stringify(item) : String(item)}
                                                   </span>
                                                   <button
                                                     onClick={() => handleArrayItemRemove(serviceName, key, index)}
-                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all flex-shrink-0"
                                                     title="Remove"
                                                   >
                                                     <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
