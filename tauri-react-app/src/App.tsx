@@ -175,6 +175,33 @@ function App() {
   const [modalTagsPrevious, setModalTagsPrevious] = useState<string | null>(null);
   const modalRepoDebounceRef = useRef<NodeJS.Timeout>();
 
+  // Inline property editing state
+  const [editingProperty, setEditingProperty] = useState<{serviceName: string, property: string} | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [selectedNetworkToAdd, setSelectedNetworkToAdd] = useState('');
+  const [refreshCounter, setRefreshCounter] = useState(0);
+
+  // Port modal state
+  const [showPortModal, setShowPortModal] = useState<string | null>(null);
+  const [portLocalPort, setPortLocalPort] = useState('');
+  const [portContainerPort, setPortContainerPort] = useState('');
+
+  // Network modal state
+  const [showNetworkModal, setShowNetworkModal] = useState(false);
+  const [networkModalMode, setNetworkModalMode] = useState<'add' | 'edit'>('add');
+  const [networkOriginalName, setNetworkOriginalName] = useState('');
+  const [networkName, setNetworkName] = useState('');
+  const [networkDriver, setNetworkDriver] = useState('');
+  const [networkExternal, setNetworkExternal] = useState(false);
+  const [networkInternal, setNetworkInternal] = useState(false);
+  const [networkAttachable, setNetworkAttachable] = useState(false);
+  const [networkEnableIpv6, setNetworkEnableIpv6] = useState(false);
+  const [networkEnableIpam, setNetworkEnableIpam] = useState(false);
+  const [networkIpamDriver, setNetworkIpamDriver] = useState('');
+  const [networkIpamSubnet, setNetworkIpamSubnet] = useState('');
+  const [networkIpamIpRange, setNetworkIpamIpRange] = useState('');
+  const [networkIpamGateway, setNetworkIpamGateway] = useState('');
+
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -574,8 +601,8 @@ function App() {
   };
 
   const handleAddNetwork = () => {
-    console.log('Add network clicked');
-    // TODO: Implement add network logic
+    setNetworkModalMode('add');
+    setShowNetworkModal(true);
   };
 
   const handleAddVolume = () => {
@@ -778,6 +805,338 @@ function App() {
     setModalTagsCount(0);
     setModalTagsNext(null);
     setModalTagsPrevious(null);
+  };
+
+  // Inline property editing handlers
+  const handlePropertyEdit = (serviceName: string, property: string, currentValue: any) => {
+    // For ports, open modal instead
+    if (property === 'ports') {
+      setShowPortModal(serviceName);
+      return;
+    }
+    
+    setEditingProperty({ serviceName, property });
+    // For container_name, use the current value
+    if (property === 'container_name') {
+      setEditingValue(currentValue || '');
+    } else {
+      // For arrays, start with empty string to add new item
+      setEditingValue('');
+    }
+  };
+
+  const handlePropertySave = () => {
+    if (!editingProperty || !selectedItemId) return;
+    
+    const { serviceName, property } = editingProperty;
+    const value = editingValue.trim();
+    
+    if (!value) {
+      handlePropertyCancel();
+      return;
+    }
+
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.services[serviceName]) return;
+
+    const service = item.serviceContainer.services[serviceName];
+
+    if (property === 'container_name') {
+      // Single value - replace
+      service.container_name = value;
+    } else if (property === 'labels') {
+      // Labels can be object or array - we'll use array format
+      if (!service.labels || typeof service.labels === 'object' && !Array.isArray(service.labels)) {
+        service.labels = [];
+      }
+      (service.labels as string[]).push(value);
+    } else if (property === 'networks') {
+      // Networks can be array or object - we'll use array format
+      if (!service.networks || typeof service.networks === 'object' && !Array.isArray(service.networks)) {
+        service.networks = [];
+      }
+      (service.networks as string[]).push(value);
+    } else if (property === 'ports') {
+      // Ports array
+      if (!service.ports) {
+        service.ports = [];
+      }
+      service.ports.push(value);
+    } else if (property === 'volumes') {
+      // Volumes array
+      if (!service.volumes) {
+        service.volumes = [];
+      }
+      service.volumes.push(value);
+    } else if (property === 'depends_on') {
+      // depends_on can be array or object - we'll use array format
+      if (!service.depends_on || typeof service.depends_on === 'object' && !Array.isArray(service.depends_on)) {
+        service.depends_on = [];
+      }
+      (service.depends_on as string[]).push(value);
+    }
+
+    workspaceManager.updateItem(selectedItemId, {
+      serviceContainer: item.serviceContainer
+    });
+
+    // Force re-render
+    setRefreshCounter(prev => prev + 1);
+    handlePropertyCancel();
+  };
+
+  const handlePropertyCancel = () => {
+    setEditingProperty(null);
+    setEditingValue('');
+    setSelectedNetworkToAdd('');
+  };
+
+  const handleAddNetworkToService = (serviceName: string) => {
+    if (!selectedItemId || !selectedNetworkToAdd) return;
+
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.services[serviceName]) return;
+
+    const service = item.serviceContainer.services[serviceName];
+    
+    if (!service.networks || typeof service.networks === 'object' && !Array.isArray(service.networks)) {
+      service.networks = [];
+    }
+
+    // Add network if not already added
+    if (!service.networks.includes(selectedNetworkToAdd)) {
+      (service.networks as string[]).push(selectedNetworkToAdd);
+      
+      workspaceManager.updateItem(selectedItemId, {
+        serviceContainer: item.serviceContainer
+      });
+      
+      // Force re-render
+      setRefreshCounter(prev => prev + 1);
+    }
+
+    setSelectedNetworkToAdd('');
+  };
+
+  const handleArrayItemRemove = (serviceName: string, property: string, index: number) => {
+    if (!selectedItemId) return;
+
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.services[serviceName]) return;
+
+    const service = item.serviceContainer.services[serviceName];
+
+    if (property === 'labels' && Array.isArray(service.labels)) {
+      service.labels.splice(index, 1);
+      if (service.labels.length === 0) {
+        delete service.labels;
+      }
+    } else if (property === 'networks' && Array.isArray(service.networks)) {
+      service.networks.splice(index, 1);
+      if (service.networks.length === 0) {
+        delete service.networks;
+      }
+    } else if (property === 'ports' && service.ports) {
+      service.ports.splice(index, 1);
+      if (service.ports.length === 0) {
+        delete service.ports;
+      }
+    } else if (property === 'volumes' && service.volumes) {
+      service.volumes.splice(index, 1);
+      if (service.volumes.length === 0) {
+        delete service.volumes;
+      }
+    } else if (property === 'depends_on' && Array.isArray(service.depends_on)) {
+      service.depends_on.splice(index, 1);
+      if (service.depends_on.length === 0) {
+        delete service.depends_on;
+      }
+    }
+
+    workspaceManager.updateItem(selectedItemId, {
+      serviceContainer: item.serviceContainer
+    });
+    
+    // Force re-render
+    setRefreshCounter(prev => prev + 1);
+  };
+
+  // Port modal handlers
+  const handlePortModalSave = () => {
+    if (!showPortModal || !selectedItemId) return;
+
+    const localPort = parseInt(portLocalPort, 10);
+    const containerPort = parseInt(portContainerPort, 10);
+
+    // Validation
+    if (isNaN(localPort) || localPort < 1 || localPort > 65535) {
+      alert('Local port must be a number between 1 and 65535');
+      return;
+    }
+    if (isNaN(containerPort) || containerPort < 1 || containerPort > 65535) {
+      alert('Container port must be a number between 1 and 65535');
+      return;
+    }
+
+    const serviceName = showPortModal;
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.services[serviceName]) return;
+
+    const service = item.serviceContainer.services[serviceName];
+    
+    if (!service.ports) {
+      service.ports = [];
+    }
+
+    // Add port in format "localport:containerport"
+    service.ports.push(`${localPort}:${containerPort}`);
+
+    workspaceManager.updateItem(selectedItemId, {
+      serviceContainer: item.serviceContainer
+    });
+
+    handlePortModalClose();
+  };
+
+  const handlePortModalClose = () => {
+    setShowPortModal(null);
+    setPortLocalPort('');
+    setPortContainerPort('');
+  };
+
+  const handlePortInputChange = (value: string, setter: (val: string) => void) => {
+    // Only allow numbers
+    if (value === '' || /^[0-9]+$/.test(value)) {
+      const num = parseInt(value, 10);
+      // Only set if empty or within valid range
+      if (value === '' || (num >= 1 && num <= 65535)) {
+        setter(value);
+      }
+    }
+  };
+
+  // Network modal handlers
+  const handleNetworkEdit = (networkName: string) => {
+    if (!selectedItemId) return;
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.networks?.[networkName]) return;
+
+    const network = item.serviceContainer.networks[networkName];
+    
+    setNetworkModalMode('edit');
+    setNetworkOriginalName(networkName);
+    setNetworkName(networkName);
+    setNetworkDriver(network.driver || '');
+    setNetworkExternal(typeof network.external === 'boolean' ? network.external : false);
+    setNetworkInternal(network.internal || false);
+    setNetworkAttachable(network.attachable || false);
+    setNetworkEnableIpv6(network.enable_ipv6 || false);
+    
+    // Load IPAM data
+    if (network.ipam) {
+      setNetworkEnableIpam(true);
+      setNetworkIpamDriver(network.ipam.driver || '');
+      if (network.ipam.config && network.ipam.config.length > 0) {
+        const config = network.ipam.config[0];
+        setNetworkIpamSubnet(config.subnet || '');
+        setNetworkIpamIpRange(config.ip_range || '');
+        setNetworkIpamGateway(config.gateway || '');
+      }
+    }
+    
+    setShowNetworkModal(true);
+  };
+
+  const handleNetworkModalSave = () => {
+    if (!selectedItemId || !networkName.trim()) {
+      alert('Network name is required');
+      return;
+    }
+
+    // Validate no spaces in network name
+    if (networkName.trim().includes(' ')) {
+      alert('Network name cannot contain spaces');
+      return;
+    }
+
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer) return;
+
+    if (!item.serviceContainer.networks) {
+      item.serviceContainer.networks = {};
+    }
+
+    // Check for duplicate network name (only when adding or renaming)
+    if (networkModalMode === 'add' || (networkModalMode === 'edit' && networkOriginalName !== networkName.trim())) {
+      if (item.serviceContainer.networks[networkName.trim()]) {
+        alert('A network with this name already exists');
+        return;
+      }
+    }
+
+    // If editing and name changed, remove old network
+    if (networkModalMode === 'edit' && networkOriginalName !== networkName.trim()) {
+      delete item.serviceContainer.networks[networkOriginalName];
+    }
+
+    // Create network definition
+    const networkDef: any = {};
+    if (networkDriver) networkDef.driver = networkDriver;
+    if (networkExternal) networkDef.external = networkExternal;
+    if (networkInternal) networkDef.internal = networkInternal;
+    if (networkAttachable) networkDef.attachable = networkAttachable;
+    if (networkEnableIpv6) networkDef.enable_ipv6 = networkEnableIpv6;
+    
+    // Add IPAM if enabled
+    if (networkEnableIpam) {
+      networkDef.ipam = {};
+      if (networkIpamDriver) networkDef.ipam.driver = networkIpamDriver;
+      
+      // Add config if any values are set
+      if (networkIpamSubnet || networkIpamIpRange || networkIpamGateway) {
+        networkDef.ipam.config = [{}];
+        if (networkIpamSubnet) networkDef.ipam.config[0].subnet = networkIpamSubnet;
+        if (networkIpamIpRange) networkDef.ipam.config[0].ip_range = networkIpamIpRange;
+        if (networkIpamGateway) networkDef.ipam.config[0].gateway = networkIpamGateway;
+      }
+    }
+    
+    item.serviceContainer.networks[networkName.trim()] = networkDef;
+
+    workspaceManager.updateItem(selectedItemId, {
+      serviceContainer: item.serviceContainer
+    });
+
+    handleNetworkModalClose();
+  };
+
+  const handleNetworkModalClose = () => {
+    setShowNetworkModal(false);
+    setNetworkModalMode('add');
+    setNetworkOriginalName('');
+    setNetworkName('');
+    setNetworkDriver('');
+    setNetworkExternal(false);
+    setNetworkInternal(false);
+    setNetworkAttachable(false);
+    setNetworkEnableIpv6(false);
+    setNetworkEnableIpam(false);
+    setNetworkIpamDriver('');
+    setNetworkIpamSubnet('');
+    setNetworkIpamIpRange('');
+    setNetworkIpamGateway('');
+  };
+
+  const handleNetworkRemove = (networkName: string) => {
+    if (!selectedItemId) return;
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.networks) return;
+
+    delete item.serviceContainer.networks[networkName];
+
+    workspaceManager.updateItem(selectedItemId, {
+      serviceContainer: item.serviceContainer
+    });
   };
 
   return (
@@ -1106,6 +1465,7 @@ function App() {
                                 {Object.entries(serviceConfig)
                                   .filter(([key]) => ['container_name', 'image', 'labels', 'networks', 'ports', 'volumes', 'depends_on'].includes(key))
                                   .map(([key, value]) => {
+                                    // Image property (existing)
                                     if (key === 'image') {
                                       return (
                                         <div key={key} className="space-y-1">
@@ -1127,15 +1487,239 @@ function App() {
                                         </div>
                                       );
                                     }
-                                    return (
-                                      <div key={key} className="flex gap-2 items-start">
-                                        <span className="font-semibold min-w-[100px] pt-1">{key}:</span>
-                                        <span className="text-gray-600 dark:text-gray-400 break-all flex-1">
-                                          {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-                                        </span>
-                                      </div>
-                                    );
+                                    
+                                    // Container name property (single value with inline edit)
+                                    if (key === 'container_name') {
+                                      const isEditing = editingProperty?.serviceName === serviceName && editingProperty?.property === key;
+                                      return (
+                                        <div key={key} className="space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-sm">{key}:</span>
+                                            <button
+                                              onClick={() => handlePropertyEdit(serviceName, key, value)}
+                                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                              title="Edit container name"
+                                            >
+                                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                          {isEditing ? (
+                                            <input
+                                              type="text"
+                                              value={editingValue}
+                                              onChange={(e) => setEditingValue(e.target.value)}
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                  handlePropertySave();
+                                                } else if (e.key === 'Escape') {
+                                                  handlePropertyCancel();
+                                                }
+                                              }}
+                                              onBlur={handlePropertyCancel}
+                                              autoFocus
+                                              placeholder="Enter container name"
+                                              className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-blue-500 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            />
+                                          ) : (
+                                            <div className="text-gray-600 dark:text-gray-400 text-xs break-all pl-2">
+                                              {typeof value === 'string' ? value : '(not set)'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Ports property (special modal handling)
+                                    if (key === 'ports') {
+                                      const arrayValue = Array.isArray(value) ? value : [];
+                                      
+                                      return (
+                                        <div key={key} className="space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-sm">{key}:</span>
+                                            <button
+                                              onClick={() => handlePropertyEdit(serviceName, key, value)}
+                                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                              title={`Add ${key}`}
+                                            >
+                                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                          <div className="pl-2 space-y-1">
+                                            {arrayValue.length > 0 ? (
+                                              arrayValue.map((item, index) => (
+                                                <div key={index} className="flex items-center gap-1 group">
+                                                  <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
+                                                    {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                                  </span>
+                                                  <button
+                                                    onClick={() => handleArrayItemRemove(serviceName, key, index)}
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    title="Remove"
+                                                  >
+                                                    <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <span className="text-gray-400 dark:text-gray-500 text-xs italic">(empty)</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Networks property (special dropdown handling)
+                                    if (key === 'networks') {
+                                      const isEditing = editingProperty?.serviceName === serviceName && editingProperty?.property === key;
+                                      const arrayValue = Array.isArray(value) ? value : [];
+                                      
+                                      // Get available networks from ServiceContainer
+                                      const availableNetworks = workspaceManager.getItem(selectedItemId)?.serviceContainer?.networks 
+                                        ? Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!)
+                                        : [];
+                                      
+                                      // Filter out already added networks
+                                      const networksToShow = availableNetworks.filter(net => !arrayValue.includes(net));
+                                      
+                                      return (
+                                        <div key={key} className="space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-sm">{key}:</span>
+                                            <button
+                                              onClick={() => handlePropertyEdit(serviceName, key, value)}
+                                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                              title={`Add ${key}`}
+                                            >
+                                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                          <div className="pl-2 space-y-1">
+                                            {arrayValue.length > 0 ? (
+                                              arrayValue.map((item, index) => (
+                                                <div key={index} className="flex items-center gap-1 group">
+                                                  <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
+                                                    {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                                  </span>
+                                                  <button
+                                                    onClick={() => handleArrayItemRemove(serviceName, key, index)}
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    title="Remove"
+                                                  >
+                                                    <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <span className="text-gray-400 dark:text-gray-500 text-xs italic">(empty)</span>
+                                            )}
+                                            {isEditing && networksToShow.length > 0 && (
+                                              <div className="flex gap-1">
+                                                <select
+                                                  value={selectedNetworkToAdd}
+                                                  onChange={(e) => setSelectedNetworkToAdd(e.target.value)}
+                                                  className="flex-1 px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-blue-500 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                >
+                                                  <option value="">Select network...</option>
+                                                  {networksToShow.map(net => (
+                                                    <option key={net} value={net}>{net}</option>
+                                                  ))}
+                                                </select>
+                                                <button
+                                                  onClick={() => handleAddNetworkToService(serviceName)}
+                                                  disabled={!selectedNetworkToAdd}
+                                                  className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                  Add
+                                                </button>
+                                              </div>
+                                            )}
+                                            {isEditing && networksToShow.length === 0 && (
+                                              <span className="text-gray-400 dark:text-gray-500 text-xs italic">
+                                                {availableNetworks.length === 0 ? 'No networks defined in container' : 'All networks already added'}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Array properties (labels, volumes, depends_on)
+                                    if (['labels', 'volumes', 'depends_on'].includes(key)) {
+                                      const isEditing = editingProperty?.serviceName === serviceName && editingProperty?.property === key;
+                                      const arrayValue = Array.isArray(value) ? value : [];
+                                      
+                                      return (
+                                        <div key={key} className="space-y-1">
+                                          <div className="flex items-center justify-between">
+                                            <span className="font-semibold text-sm">{key}:</span>
+                                            <button
+                                              onClick={() => handlePropertyEdit(serviceName, key, value)}
+                                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                                              title={`Add ${key}`}
+                                            >
+                                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                              </svg>
+                                            </button>
+                                          </div>
+                                          <div className="pl-2 space-y-1">
+                                            {arrayValue.length > 0 ? (
+                                              arrayValue.map((item, index) => (
+                                                <div key={index} className="flex items-center gap-1 group">
+                                                  <span className="text-gray-600 dark:text-gray-400 text-xs break-all flex-1">
+                                                    {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                                                  </span>
+                                                  <button
+                                                    onClick={() => handleArrayItemRemove(serviceName, key, index)}
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-all"
+                                                    title="Remove"
+                                                  >
+                                                    <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <span className="text-gray-400 dark:text-gray-500 text-xs italic">(empty)</span>
+                                            )}
+                                            {isEditing && (
+                                              <input
+                                                type="text"
+                                                value={editingValue}
+                                                onChange={(e) => setEditingValue(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    handlePropertySave();
+                                                  } else if (e.key === 'Escape') {
+                                                    handlePropertyCancel();
+                                                  }
+                                                }}
+                                                onBlur={handlePropertyCancel}
+                                                autoFocus
+                                                placeholder={`Add new ${key}`}
+                                                className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-blue-500 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                              />
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    return null;
                                   })}
+                                
                                 
                                 {/* Button to show all properties */}
                                 <button
@@ -1181,8 +1765,32 @@ function App() {
                   </div>
                   {workspaceManager.getItem(selectedItemId)?.serviceContainer?.networks &&
                    Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).length > 0 ? (
-                    <div className="text-sm text-gray-900 dark:text-white">
-                      {Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).length} network(s)
+                    <div className="space-y-1">
+                      {Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).map((networkName) => (
+                        <div key={networkName} className="flex items-center justify-between group p-1 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
+                          <span className="text-sm text-gray-900 dark:text-white">{networkName}</span>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleNetworkEdit(networkName)}
+                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded transition-colors"
+                              title="Edit network"
+                            >
+                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleNetworkRemove(networkName)}
+                              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                              title="Remove network"
+                            >
+                              <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500 dark:text-gray-400 italic">
@@ -1620,6 +2228,341 @@ function App() {
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Select
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Port Modal */}
+      {showPortModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black bg-opacity-50" onClick={handlePortModalClose}></div>
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Add a New Port binding
+              </h2>
+              <button
+                onClick={handlePortModalClose}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              >
+                <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {/* Port inputs */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Local Port */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Local Port
+                  </label>
+                  <input
+                    type="text"
+                    value={portLocalPort}
+                    onChange={(e) => handlePortInputChange(e.target.value, setPortLocalPort)}
+                    placeholder="e.g., 8080"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">1-65535</p>
+                </div>
+
+                {/* Container Port */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Container Port
+                  </label>
+                  <input
+                    type="text"
+                    value={portContainerPort}
+                    onChange={(e) => handlePortInputChange(e.target.value, setPortContainerPort)}
+                    placeholder="e.g., 80"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">1-65535</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+              <button
+                onClick={handlePortModalClose}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePortModalSave}
+                disabled={!portLocalPort || !portContainerPort}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Network Modal */}
+      {showNetworkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black bg-opacity-50" onClick={handleNetworkModalClose}></div>
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                {networkModalMode === 'add' ? 'Add Network' : 'Edit Network'}
+              </h2>
+              <button
+                onClick={handleNetworkModalClose}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+              >
+                <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-140px)]">
+              {/* Network Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Network Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={networkName}
+                  onChange={(e) => setNetworkName(e.target.value)}
+                  placeholder="e.g., frontend, backend"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Driver */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Driver
+                </label>
+                <input
+                  type="text"
+                  value={networkDriver}
+                  onChange={(e) => setNetworkDriver(e.target.value)}
+                  placeholder="e.g., bridge, overlay"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Default: bridge</p>
+              </div>
+
+              {/* Checkboxes Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* External */}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="network-external"
+                    checked={networkExternal}
+                    onChange={(e) => setNetworkExternal(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor="network-external" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    External
+                  </label>
+                </div>
+
+                {/* Internal */}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="network-internal"
+                    checked={networkInternal}
+                    onChange={(e) => setNetworkInternal(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor="network-internal" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Internal
+                  </label>
+                </div>
+
+                {/* Attachable */}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="network-attachable"
+                    checked={networkAttachable}
+                    onChange={(e) => setNetworkAttachable(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor="network-attachable" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Attachable
+                  </label>
+                </div>
+
+                {/* Enable IPv6 */}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="network-ipv6"
+                    checked={networkEnableIpv6}
+                    onChange={(e) => setNetworkEnableIpv6(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor="network-ipv6" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enable IPv6
+                  </label>
+                </div>
+              </div>
+
+              {/* IPAM Section */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <div className="flex items-center mb-4">
+                  <input
+                    type="checkbox"
+                    id="network-enable-ipam"
+                    checked={networkEnableIpam}
+                    onChange={(e) => setNetworkEnableIpam(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                  />
+                  <label htmlFor="network-enable-ipam" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Enable IPAM (IP Address Management)
+                  </label>
+                </div>
+
+                {networkEnableIpam && (
+                  <div className="ml-6 space-y-4 pl-4 border-l-2 border-blue-200 dark:border-blue-800">
+                    {/* IPAM Driver */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        IPAM Driver
+                      </label>
+                      <input
+                        type="text"
+                        value={networkIpamDriver}
+                        onChange={(e) => setNetworkIpamDriver(e.target.value)}
+                        placeholder="e.g., default"
+                        className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {/* IPAM Config */}
+                    <div className="space-y-3">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        IPAM Configuration
+                      </label>
+                      
+                      {/* Subnet */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          Subnet
+                        </label>
+                        <input
+                          type="text"
+                          value={networkIpamSubnet}
+                          onChange={(e) => setNetworkIpamSubnet(e.target.value)}
+                          placeholder="e.g., 172.28.0.0/16"
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* IP Range */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          IP Range
+                        </label>
+                        <input
+                          type="text"
+                          value={networkIpamIpRange}
+                          onChange={(e) => setNetworkIpamIpRange(e.target.value)}
+                          placeholder="e.g., 172.28.5.0/24"
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Gateway */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          Gateway
+                        </label>
+                        <input
+                          type="text"
+                          value={networkIpamGateway}
+                          onChange={(e) => setNetworkIpamGateway(e.target.value)}
+                          placeholder="e.g., 172.28.0.1"
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Aux Addresses (Disabled) */}
+                      <div className="opacity-50">
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                            Auxiliary Addresses
+                          </label>
+                          <button
+                            disabled
+                            className="text-xs px-2 py-1 bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded cursor-not-allowed"
+                            title="Coming soon"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                        <div className="text-xs text-gray-400 dark:text-gray-500 italic">
+                          (Coming soon)
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* IPAM Options (Disabled) */}
+                    <div className="opacity-50">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+                          IPAM Options
+                        </label>
+                        <button
+                          disabled
+                          className="text-xs px-2 py-1 bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded cursor-not-allowed"
+                          title="Coming soon"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 italic">
+                        (Coming soon)
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Help Text */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                <p className="text-xs text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Tip:</span> Additional network options like IPAM, driver options, and labels can be configured in the YAML editor after creation.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+              <button
+                onClick={handleNetworkModalClose}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleNetworkModalSave}
+                disabled={!networkName.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {networkModalMode === 'add' ? 'Add' : 'Save'}
               </button>
             </div>
           </div>
