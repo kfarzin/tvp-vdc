@@ -150,6 +150,9 @@ function App() {
   // Service collapse state (track which services are collapsed)
   const [collapsedServices, setCollapsedServices] = useState<Set<string>>(new Set());
 
+  // Selected service state (track which service is selected for opacity control)
+  const [selectedServiceName, setSelectedServiceName] = useState<string | null>(null);
+
   // Full properties slider state
   const [selectedServiceForDetails, setSelectedServiceForDetails] = useState<string | null>(null);
   const [sliderSearchQuery, setSliderSearchQuery] = useState('');
@@ -1282,17 +1285,36 @@ function App() {
 
   // Handle service click in sidebar - select corresponding node in canvas
   const handleServiceClick = (serviceName: string) => {
+    setSelectedServiceName(serviceName);
     setNodes((nds) =>
       nds.map((node) => ({
         ...node,
         selected: node.id === serviceName,
       }))
     );
+
+    // Expand the clicked service and collapse others
+    const newCollapsed = new Set(collapsedServices);
+    newCollapsed.delete(serviceName);
+    
+    // Add all other services to collapsed
+    if (selectedItemId) {
+      const item = workspaceManager.getItem(selectedItemId);
+      const allServices = Object.keys(item?.serviceContainer?.services || {});
+      allServices.forEach(svc => {
+        if (svc !== serviceName) {
+          newCollapsed.add(svc);
+        }
+      });
+    }
+    
+    setCollapsedServices(newCollapsed);
   };
 
   // Handle node click in canvas - expand corresponding service in sidebar
   const handleNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     const serviceName = node.id;
+    setSelectedServiceName(serviceName);
     
     // Expand the clicked service and collapse others
     const newCollapsed = new Set(collapsedServices);
@@ -1620,8 +1642,9 @@ function App() {
                     <div className="space-y-2">
                       {Object.entries(workspaceManager.getItem(selectedItemId)!.serviceContainer!.services).map(([serviceName, serviceConfig]) => {
                         const isCollapsed = collapsedServices.has(serviceName);
+                        const isSelected = selectedServiceName === serviceName;
                         return (
-                          <div key={serviceName} className="border-t-4 border-blue-500 bg-gray-50 dark:bg-gray-800 rounded">
+                          <div key={serviceName} className={`border-t-4 border-blue-500 bg-gray-50 dark:bg-gray-800 rounded transition-opacity ${isSelected ? 'opacity-100' : 'opacity-50'}`}>
                             <div 
                               className="w-full flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                               onClick={() => handleServiceClick(serviceName)}
@@ -1639,13 +1662,14 @@ function App() {
                               ) : (
                                 <span 
                                   onDoubleClick={() => handleServiceNameDoubleClick(serviceName)}
-                                  className="flex-1 font-medium text-sm text-gray-900 dark:text-white cursor-pointer"
+                                  className="flex-1 font-semibold text-sm text-orange-600 dark:text-orange-400 cursor-pointer"
                                 >
                                   {serviceName}
                                 </span>
                               )}
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   const newCollapsed = new Set(collapsedServices);
                                   if (isCollapsed) {
                                     newCollapsed.delete(serviceName);
@@ -1667,7 +1691,7 @@ function App() {
                               </button>
                             </div>
                             {!isCollapsed && (
-                              <div className="px-2 pb-2 text-xs space-y-3 text-gray-700 dark:text-gray-300">
+                              <div className="px-2 pt-4 pb-4 text-xs space-y-4 text-gray-700 dark:text-gray-300">
                                 {/* Icon dropdown - first property */}
                                 <div className="flex gap-2 items-center">
                                   <span className="font-semibold min-w-[100px]">icon:</span>
