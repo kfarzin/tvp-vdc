@@ -159,11 +159,14 @@ function App() {
   
   // Image modal state
   const [showImageModal, setShowImageModal] = useState<string | null>(null);
+  const [modalInputMode, setModalInputMode] = useState<'manual' | 'search'>('manual');
+  const [modalManualInput, setModalManualInput] = useState('');
   const [modalRepoSearch, setModalRepoSearch] = useState('');
   const [modalRepoResults, setModalRepoResults] = useState<DockerRepository[]>([]);
   const [modalRepoLoading, setModalRepoLoading] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
   const [modalRepoSelectedIndex, setModalRepoSelectedIndex] = useState(-1);
+  const [modalSelectedTag, setModalSelectedTag] = useState<string | null>(null);
   const [modalTags, setModalTags] = useState<DockerTag[]>([]);
   const [modalTagsLoading, setModalTagsLoading] = useState(false);
   const [modalTagsPage, setModalTagsPage] = useState(1);
@@ -730,31 +733,46 @@ function App() {
 
   // Handle tag selection
   const handleTagSelect = (tagName: string) => {
-    if (showImageModal && selectedRepo) {
-      const serviceName = showImageModal;
-      const fullImageName = `${selectedRepo}:${tagName}`;
-      
-      if (selectedItemId) {
-        const item = workspaceManager.getItem(selectedItemId);
-        if (item?.serviceContainer?.services[serviceName]) {
-          // Update service image
-          item.serviceContainer.services[serviceName].image = fullImageName;
-          workspaceManager.updateItem(selectedItemId, { serviceContainer: item.serviceContainer });
-          setWorkspaceItems([...workspaceManager.getAllItems()]);
-        }
-      }
-      // Close modal and reset
-      handleModalClose();
+    setModalSelectedTag(tagName);
+  };
+
+  // Handle modal confirm (Select button)
+  const handleModalConfirm = () => {
+    if (!showImageModal) return;
+    
+    const serviceName = showImageModal;
+    let imageToSet = '';
+    
+    if (modalInputMode === 'manual') {
+      imageToSet = modalManualInput.trim();
+    } else if (modalInputMode === 'search' && selectedRepo && modalSelectedTag) {
+      imageToSet = `${selectedRepo}:${modalSelectedTag}`;
     }
+    
+    if (imageToSet && selectedItemId) {
+      const item = workspaceManager.getItem(selectedItemId);
+      if (item?.serviceContainer?.services[serviceName]) {
+        // Update service image
+        item.serviceContainer.services[serviceName].image = imageToSet;
+        workspaceManager.updateItem(selectedItemId, { serviceContainer: item.serviceContainer });
+        setWorkspaceItems([...workspaceManager.getAllItems()]);
+      }
+    }
+    
+    // Close modal and reset
+    handleModalClose();
   };
 
   // Handle modal close
   const handleModalClose = () => {
     setShowImageModal(null);
+    setModalInputMode('manual');
+    setModalManualInput('');
     setModalRepoSearch('');
     setModalRepoResults([]);
     setModalRepoSelectedIndex(-1);
     setSelectedRepo(null);
+    setModalSelectedTag(null);
     setModalTags([]);
     setModalTagsPage(1);
     setModalTagsCount(0);
@@ -1372,15 +1390,48 @@ function App() {
 
             {/* Modal Body */}
             <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+              {/* Manual Image Input */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={modalInputMode === 'manual'}
+                    onChange={() => setModalInputMode('manual')}
+                    className="w-4 h-4 text-blue-600 cursor-pointer"
+                  />
+                  Manual Image Name
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  disabled={modalInputMode !== 'manual'}
+                  value={modalManualInput}
+                  onChange={(e) => setModalManualInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && modalManualInput.trim()) {
+                      handleModalConfirm();
+                    }
+                  }}
+                  placeholder="Enter image name (e.g., nginx:latest)"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+              </div>
+
               {/* Repository Search */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={modalInputMode === 'search'}
+                    onChange={() => setModalInputMode('search')}
+                    className="w-4 h-4 text-blue-600 cursor-pointer"
+                  />
                   Search Repository
                 </label>
                 <div className="relative">
                   <input
                     type="text"
-                    autoFocus
+                    disabled={modalInputMode !== 'search'}
                     value={modalRepoSearch}
                     onChange={(e) => handleModalRepoSearch(e.target.value)}
                     onKeyDown={(e) => {
@@ -1483,12 +1534,19 @@ function App() {
                                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Full Size</th>
                                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Last Updated</th>
                                 <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Status</th>
-                                <th className="px-3 py-2 text-left font-medium text-gray-700 dark:text-gray-300">Action</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                               {modalTags.map((tag) => (
-                                <tr key={tag.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <tr 
+                                  key={tag.id} 
+                                  onClick={() => handleTagSelect(tag.name)}
+                                  className={`cursor-pointer transition-colors ${
+                                    modalSelectedTag === tag.name 
+                                      ? 'bg-blue-100 dark:bg-blue-900/30' 
+                                      : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                                  }`}
+                                >
                                   <td className="px-3 py-2 text-gray-900 dark:text-white font-medium">{tag.name}</td>
                                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{tag.images.length}</td>
                                   <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
@@ -1505,14 +1563,6 @@ function App() {
                                     }`}>
                                       {tag.tag_status}
                                     </span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <button
-                                      onClick={() => handleTagSelect(tag.name)}
-                                      className="px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                                    >
-                                      Select
-                                    </button>
                                   </td>
                                 </tr>
                               ))}
@@ -1554,12 +1604,22 @@ function App() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end flex-shrink-0">
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 flex-shrink-0">
               <button
                 onClick={handleModalClose}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
               >
                 Close
+              </button>
+              <button
+                onClick={handleModalConfirm}
+                disabled={
+                  (modalInputMode === 'manual' && !modalManualInput.trim()) ||
+                  (modalInputMode === 'search' && (!selectedRepo || !modalSelectedTag))
+                }
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Select
               </button>
             </div>
           </div>
