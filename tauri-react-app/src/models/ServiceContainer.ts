@@ -22,6 +22,7 @@ export interface NetworkDefinition {
   };
   labels?: Record<string, string> | string[];
   name?: string;
+  color?: string;
 }
 
 /**

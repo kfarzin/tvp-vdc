@@ -6,6 +6,7 @@ import { WorkspaceManager } from './application/workspace-manager';
 import { WorkspaceItem } from './application/workspace-item';
 import { ReactFlow, Controls, Background, BackgroundVariant, useNodesState, useEdgesState, addEdge, Connection, Node, NodeProps } from '@xyflow/react';
 import { DockerHubService, DockerRepository, DockerTag, DockerHubTagsResponse } from './services/docker-hub-service';
+import { getUniqueNetworkColor, getUsedNetworkColors } from './constants/colors';
 import '@xyflow/react/dist/style.css';
 
 // Generate random workspace name
@@ -411,6 +412,15 @@ function App() {
     if (itemToRemove) {
       workspaceManager.removeItem(itemToRemove);
       setWorkspaceItems([...workspaceManager.getAllItems()]);
+      
+      // Clear the right panel if the removed item was selected
+      if (selectedItemId === itemToRemove) {
+        setSelectedItemId(null);
+        setSelectedServiceForDetails(null);
+        setNodes([]);
+        setEdges([]);
+      }
+      
       setItemToRemove(null);
     }
   };
@@ -1074,6 +1084,12 @@ function App() {
       }
     }
 
+    // Save the existing color before deleting the old network (when editing)
+    let existingColor: string | undefined;
+    if (networkModalMode === 'edit' && networkOriginalName && item.serviceContainer.networks[networkOriginalName]) {
+      existingColor = item.serviceContainer.networks[networkOriginalName].color;
+    }
+
     // If editing and name changed, remove old network
     if (networkModalMode === 'edit' && networkOriginalName !== networkName.trim()) {
       delete item.serviceContainer.networks[networkOriginalName];
@@ -1086,6 +1102,15 @@ function App() {
     if (networkInternal) networkDef.internal = networkInternal;
     if (networkAttachable) networkDef.attachable = networkAttachable;
     if (networkEnableIpv6) networkDef.enable_ipv6 = networkEnableIpv6;
+    
+    // Assign color: use existing color when editing, generate unique color when adding
+    if (networkModalMode === 'edit' && existingColor) {
+      networkDef.color = existingColor;
+    } else if (networkModalMode === 'add') {
+      // Get all currently used colors to ensure uniqueness
+      const usedColors = getUsedNetworkColors(item.serviceContainer.networks);
+      networkDef.color = getUniqueNetworkColor(usedColors);
+    }
     
     // Add IPAM if enabled
     if (networkEnableIpam) {
@@ -1320,6 +1345,32 @@ function App() {
             >
               <Controls />
               <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
+              
+              {/* Networks Legend */}
+              {workspaceManager.getItem(selectedItemId)?.serviceContainer?.networks && 
+               Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).length > 0 && (
+                <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 p-3 min-w-[150px]">
+                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wide mb-2">
+                    Networks
+                  </div>
+                  <div className="space-y-1.5">
+                    {Object.entries(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).map(([networkName, network]) => {
+                      const networkColor = network?.color || '#9CA3AF';
+                      return (
+                        <div key={networkName} className="flex items-center gap-2">
+                          <div 
+                            className="w-3 h-3 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: networkColor }}
+                          />
+                          <span className="text-xs text-gray-900 dark:text-white truncate">
+                            {networkName}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </ReactFlow>
           ) : (
             <div className="h-full flex items-center justify-center">
@@ -1766,31 +1817,40 @@ function App() {
                   {workspaceManager.getItem(selectedItemId)?.serviceContainer?.networks &&
                    Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).length > 0 ? (
                     <div className="space-y-1">
-                      {Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).map((networkName) => (
-                        <div key={networkName} className="flex items-center justify-between group p-1 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
-                          <span className="text-sm text-gray-900 dark:text-white">{networkName}</span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => handleNetworkEdit(networkName)}
-                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded transition-colors"
-                              title="Edit network"
-                            >
-                              <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleNetworkRemove(networkName)}
-                              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-                              title="Remove network"
-                            >
-                              <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
+                      {Object.keys(workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks!).map((networkName) => {
+                        const network = workspaceManager.getItem(selectedItemId)!.serviceContainer!.networks![networkName];
+                        const networkColor = network?.color || '#9CA3AF'; // default gray if no color
+                        return (
+                          <div key={networkName} className="flex items-center group p-1 hover:bg-gray-50 dark:hover:bg-gray-600 rounded">
+                            {/* Color strip on the left */}
+                            <div 
+                              className="w-1 h-5 rounded-full mr-2 flex-shrink-0"
+                              style={{ backgroundColor: networkColor }}
+                            />
+                            <span className="text-sm text-gray-900 dark:text-white flex-1">{networkName}</span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => handleNetworkEdit(networkName)}
+                                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded transition-colors"
+                                title="Edit network"
+                              >
+                                <svg className="w-3 h-3 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleNetworkRemove(networkName)}
+                                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                                title="Remove network"
+                              >
+                                <svg className="w-3 h-3 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500 dark:text-gray-400 italic">
