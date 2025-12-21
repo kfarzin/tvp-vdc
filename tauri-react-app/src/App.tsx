@@ -182,6 +182,10 @@ function App() {
   const [selectedNetworkToAdd, setSelectedNetworkToAdd] = useState('');
   const [refreshCounter, setRefreshCounter] = useState(0);
 
+  // Service name editing state
+  const [editingServiceName, setEditingServiceName] = useState<string | null>(null);
+  const [editingServiceNameValue, setEditingServiceNameValue] = useState('');
+
   // Port modal state
   const [showPortModal, setShowPortModal] = useState<string | null>(null);
   const [portLocalPort, setPortLocalPort] = useState('');
@@ -1162,6 +1166,71 @@ function App() {
     workspaceManager.updateItem(selectedItemId, {
       serviceContainer: item.serviceContainer
     });
+    
+    // Force re-render to update the UI
+    setRefreshCounter(prev => prev + 1);
+  };
+
+  // Service name editing handlers
+  const handleServiceNameDoubleClick = (serviceName: string) => {
+    setEditingServiceName(serviceName);
+    setEditingServiceNameValue(serviceName);
+  };
+
+  const handleServiceNameSave = () => {
+    if (!selectedItemId || !editingServiceName) return;
+    
+    const newName = editingServiceNameValue.trim();
+    if (!newName) {
+      alert('Service name cannot be empty');
+      return;
+    }
+
+    const item = workspaceManager.getItem(selectedItemId);
+    if (!item?.serviceContainer?.services) return;
+
+    // Check if the new name already exists (and it's not the same service)
+    if (newName !== editingServiceName && item.serviceContainer.services[newName]) {
+      alert('A service with this name already exists');
+      return;
+    }
+
+    // If name changed, rename the service
+    if (newName !== editingServiceName) {
+      const serviceConfig = item.serviceContainer.services[editingServiceName];
+      delete item.serviceContainer.services[editingServiceName];
+      item.serviceContainer.services[newName] = serviceConfig;
+
+      // Update collapsed state if the service was collapsed
+      if (collapsedServices.has(editingServiceName)) {
+        const newCollapsed = new Set(collapsedServices);
+        newCollapsed.delete(editingServiceName);
+        newCollapsed.add(newName);
+        setCollapsedServices(newCollapsed);
+      }
+
+      workspaceManager.updateItem(selectedItemId, {
+        serviceContainer: item.serviceContainer
+      });
+
+      setRefreshCounter(prev => prev + 1);
+    }
+
+    setEditingServiceName(null);
+    setEditingServiceNameValue('');
+  };
+
+  const handleServiceNameCancel = () => {
+    setEditingServiceName(null);
+    setEditingServiceNameValue('');
+  };
+
+  const handleServiceNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleServiceNameSave();
+    } else if (e.key === 'Escape') {
+      handleServiceNameCancel();
+    }
   };
 
   return (
@@ -1472,28 +1541,47 @@ function App() {
                         const isCollapsed = collapsedServices.has(serviceName);
                         return (
                           <div key={serviceName} className="border-t-4 border-blue-500 bg-gray-50 dark:bg-gray-800 rounded">
-                            <button
-                              onClick={() => {
-                                const newCollapsed = new Set(collapsedServices);
-                                if (isCollapsed) {
-                                  newCollapsed.delete(serviceName);
-                                } else {
-                                  newCollapsed.add(serviceName);
-                                }
-                                setCollapsedServices(newCollapsed);
-                              }}
-                              className="w-full flex items-center justify-between p-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                            >
-                              <span className="font-medium text-sm text-gray-900 dark:text-white">{serviceName}</span>
-                              <svg 
-                                className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}
-                                fill="none" 
-                                stroke="currentColor" 
-                                viewBox="0 0 24 24"
+                            <div className="w-full flex items-center justify-between p-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                              {editingServiceName === serviceName ? (
+                                <input
+                                  type="text"
+                                  value={editingServiceNameValue}
+                                  onChange={(e) => setEditingServiceNameValue(e.target.value)}
+                                  onBlur={handleServiceNameSave}
+                                  onKeyDown={handleServiceNameKeyDown}
+                                  autoFocus
+                                  className="flex-1 font-medium text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-blue-500 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 mr-2"
+                                />
+                              ) : (
+                                <span 
+                                  onDoubleClick={() => handleServiceNameDoubleClick(serviceName)}
+                                  className="flex-1 font-medium text-sm text-gray-900 dark:text-white cursor-pointer"
+                                >
+                                  {serviceName}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => {
+                                  const newCollapsed = new Set(collapsedServices);
+                                  if (isCollapsed) {
+                                    newCollapsed.delete(serviceName);
+                                  } else {
+                                    newCollapsed.add(serviceName);
+                                  }
+                                  setCollapsedServices(newCollapsed);
+                                }}
+                                className="flex-shrink-0"
                               >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
+                                <svg 
+                                  className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform ${isCollapsed ? '' : 'rotate-180'}`}
+                                  fill="none" 
+                                  stroke="currentColor" 
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                            </div>
                             {!isCollapsed && (
                               <div className="px-2 pb-2 text-xs space-y-3 text-gray-700 dark:text-gray-300">
                                 {/* Icon dropdown - first property */}
